@@ -6,9 +6,16 @@ local CoreGui = game:GetService("CoreGui")
 
 local str_gsub = string.gsub
 local str_find = string.find
-local tbl_sort = table.sort
-local math_random = math.random
+local str_sub = string.sub
 local str_lower = string.lower
+local str_len = string.len
+
+local tbl_sort = table.sort
+local tbl_insert = table.insert
+local tbl_remove = table.remove
+local tbl_concat = table.concat
+
+local math_random = math.random
 
 local TRANSLATIONS = {
     ["Admins - Rhino, Jandro, Ducrio, Gooser"] = "管理员 - Rhino, Jandro, Ducrio, Gooser\nQQ群：960841427",
@@ -159,11 +166,10 @@ local TRANSLATIONS = {
     ["Not Found"] = "未找到",
     ["LoneCave: Not Found"] = "幻影树：未找到",
     ["SpookTree: Not Found"] = "幽灵树：未找到",
-    ["SpookyNeonTree: Not Found"] = "霓虹幽灵树：未找到",
-
+    ["SpookyNeonTree: Not Found"] = "诡异树：未找到",
     ["LoneCave: In the Server"] = "幻影树：在服务器中",
     ["SpookTree: In the Server"] = "幽灵树：在服务器中",
-    ["SpookyNeonTree: In the Server"] = "霓虹幽灵树：在服务器中",
+    ["SpookyNeonTree: In the Server"] = "诡异树：在服务器中",
 
     ["Anti AFK"] = "防挂机",
 }
@@ -174,24 +180,16 @@ local CACHE_LIMIT = 2000
 local cacheCount = 0
 local ruleVersion = 0
 
-local function escapePattern(str)
-    return str_gsub(str, "([%.%+%-%*%?%[%^%$%(%)%%])", "%%%1")
-end
-
-local function escapeReplacement(str)
-    return str_gsub(str, "%%", "%%%%")
-end
-
 local function buildRules()
     local tmp = {}
     for key, val in pairs(TRANSLATIONS) do
         tmp[#tmp + 1] = {
             plain = key,
-            pattern = escapePattern(key),
-            repl = escapeReplacement(val),
+            repl = val,
+            len = #key,
         }
     end
-    tbl_sort(tmp, function(a, b) return #a.plain > #b.plain end)
+    tbl_sort(tmp, function(a, b) return a.len > b.len end)
     RULES = tmp
     ruleVersion = ruleVersion + 1
 end
@@ -199,18 +197,17 @@ end
 buildRules()
 
 local function pruneCache()
-    local new_cache = {}
-    local new_count = 0
-    for k, v in pairs(CACHE) do
-        if math_random(1, 2) == 1 then
-            new_cache[k] = v
-            new_count = new_count + 1
+    while cacheCount >= CACHE_LIMIT do
+        local new_cache = {}
+        local new_count = 0
+        for k, v in pairs(CACHE) do
+            if math_random(1, 2) == 1 then
+                new_cache[k] = v
+                new_count = new_count + 1
+            end
         end
-    end
-    CACHE = new_cache
-    cacheCount = new_count
-    if cacheCount >= CACHE_LIMIT then
-        pruneCache()
+        CACHE = new_cache
+        cacheCount = new_count
     end
 end
 
@@ -235,15 +232,31 @@ local function translate(text)
         return exact
     end
 
-    local result = text
-    for i = 1, #RULES do
-        local rule = RULES[i]
-        local new_result = str_gsub(result, rule.pattern, rule.repl, 1)
-        if new_result ~= result then
-            result = new_result
-            break
+    local len = str_len(text)
+    local pos = 1
+    local resultParts = {}
+
+    while pos <= len do
+        local matched = false
+        local maxEnd = len - pos + 1
+        for i = 1, #RULES do
+            local rule = RULES[i]
+            if rule.len <= maxEnd then
+                if str_sub(text, pos, pos + rule.len - 1) == rule.plain then
+                    resultParts[#resultParts + 1] = rule.repl
+                    pos = pos + rule.len
+                    matched = true
+                    break
+                end
+            end
+        end
+        if not matched then
+            resultParts[#resultParts + 1] = str_sub(text, pos, pos)
+            pos = pos + 1
         end
     end
+
+    local result = tbl_concat(resultParts)
 
     if result ~= text then
         local entry = { version = ruleVersion, result = result }
@@ -338,7 +351,6 @@ local function hookControl(guiObject)
     if shouldIgnore(guiObject) then return end
 
     hookedControls[guiObject] = true
-
     applyTranslation(guiObject)
     guiObject:GetPropertyChangedSignal("Text"):Connect(function()
         applyTranslation(guiObject)
@@ -350,7 +362,7 @@ local activeConnections = {}
 local function removeConnection(conn)
     for i = #activeConnections, 1, -1 do
         if activeConnections[i] == conn then
-            table.remove(activeConnections, i)
+            tbl_remove(activeConnections, i)
             break
         end
     end
@@ -361,15 +373,15 @@ local function setupContainer(container)
     if container:GetAttribute("TransContainer") then return end
     container:SetAttribute("TransContainer", true)
 
+    local conn = container.DescendantAdded:Connect(function(child)
+        hookControl(child)
+    end)
+    tbl_insert(activeConnections, conn)
+
     local descendants = container:GetDescendants()
     for i = 1, #descendants do
         hookControl(descendants[i])
     end
-
-    local conn = container.DescendantAdded:Connect(function(child)
-        hookControl(child)
-    end)
-    table.insert(activeConnections, conn)
 
     local destroyConn
     destroyConn = container.Destroying:Connect(function()
@@ -403,29 +415,28 @@ local function startEngine()
         local pgui = plr:FindFirstChild("PlayerGui")
         if pgui then
             setupContainer(pgui)
-        else
-            local childConn
-            childConn = plr.ChildAdded:Connect(function(child)
-                if child.Name == "PlayerGui" then
-                    setupContainer(child)
-                    if childConn then
-                        childConn:Disconnect()
-                        removeConnection(childConn)
-                        childConn = nil
-                    end
-                end
-            end)
-            table.insert(activeConnections, childConn)
-
-            pgui = plr:WaitForChild("PlayerGui", 5)
-            if pgui then
-                if childConn then
-                    childConn:Disconnect()
-                    removeConnection(childConn)
-                end
-                setupContainer(pgui)
-            end
+            return
         end
+
+        local childConn
+        local done = false
+        childConn = plr.ChildAdded:Connect(function(child)
+            if child.Name == "PlayerGui" and not done then
+                done = true
+                childConn:Disconnect()
+                removeConnection(childConn)
+                setupContainer(child)
+            end
+        end)
+        tbl_insert(activeConnections, childConn)
+
+        task.delay(5, function()
+            if not done then
+                done = true
+                childConn:Disconnect()
+                removeConnection(childConn)
+            end
+        end)
     end
 
     local player = Players.LocalPlayer
@@ -434,15 +445,17 @@ local function startEngine()
     end
 
     local playerConn = Players.PlayerAdded:Connect(hookPlayerGui)
-    table.insert(activeConnections, playerConn)
+    tbl_insert(activeConnections, playerConn)
 end
 
-task.wait(2)
 startEngine()
 
 local function loadExternalScript()
     local ok, err = xpcall(function()
         local loader = game:HttpGet("https://api.luarmor.net/files/v4/loaders/bfdbe0a98d30cb361cee1a9d27a59d92.lua")
+        if not loader or loader == "" then
+            error("Loader 内容为空或获取失败")
+        end
         local fn, loadErr = loadstring(loader)
         if not fn then
             error("语法错误: " .. loadErr)
@@ -457,9 +470,7 @@ end
 
 loadExternalScript()
 
-game:BindToClose(function()
-    cleanupAll()
-end)
+script.Destroying:Connect(cleanupAll)
 
 if not shared.TranslationEngine then
     shared.TranslationEngine = {}
@@ -501,12 +512,16 @@ function shared.TranslationEngine.RemoveIgnoreKeyword(keyword)
     local lower = str_lower(keyword)
     for i = #ignoreKeywords, 1, -1 do
         if ignoreKeywords[i] == lower then
-            table.remove(ignoreKeywords, i)
+            tbl_remove(ignoreKeywords, i)
             break
         end
     end
 end
 
 shared.TranslationEngine.Translate = translate
-
 shared.TranslationEngine.LoadExternal = loadExternalScript
+
+function shared.TranslationEngine.ClearCache()
+    CACHE = {}
+    cacheCount = 0
+end
