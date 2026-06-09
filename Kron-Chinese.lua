@@ -93,7 +93,7 @@ local TRANSLATIONS = {
     ["Slot to load"] = "要加载的存档",
     ["Tree Option"] = "树木选项",
     ["Tree Type:"] = "树木类型：",
-    ["View LoneCave"] = "查看幻影木",
+    ["View LoneCave"] = "查看幻影树",
     ["Your Loaded Slot"] = "你加载的存档",
 
     ["Base Dupe"] = "基地复制",
@@ -157,11 +157,11 @@ local TRANSLATIONS = {
     ["Vehicle Speed"] = "载具速度",
 
     ["Not Found"] = "未找到",
-    ["LoneCave: Not Found"] = "幻影木：未找到",
+    ["LoneCave: Not Found"] = "幻影树：未找到",
     ["SpookTree: Not Found"] = "幽灵树：未找到",
     ["SpookyNeonTree: Not Found"] = "霓虹幽灵树：未找到",
 
-    ["LoneCave: In the Server"] = "幻影木：在服务器中",
+    ["LoneCave: In the Server"] = "幻影树：在服务器中",
     ["SpookTree: In the Server"] = "幽灵树：在服务器中",
     ["SpookyNeonTree: In the Server"] = "霓虹幽灵树：在服务器中",
 
