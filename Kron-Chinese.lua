@@ -168,10 +168,10 @@ local TRANSLATIONS = {
     ["Not Found"] = "未找到",
     ["LoneCave: Not Found"] = "幻影树：未找到",
     ["SpookTree: Not Found"] = "幽灵树：未找到",
-    ["SpookyNeonTree: Not Found"] = "诡异树：未找到",
+    ["SpookyNeonTree: Not Found"] = "南瓜树：未找到",
     ["LoneCave: In the Server"] = "幻影树：在服务器中",
     ["SpookTree: In the Server"] = "幽灵树：在服务器中",
-    ["SpookyNeonTree: In the Server"] = "诡异树：在服务器中",
+    ["SpookyNeonTree: In the Server"] = "南瓜树：在服务器中",
 
     ["Anti AFK"] = "防挂机",
 }
