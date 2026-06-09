@@ -80,6 +80,8 @@ local TRANSLATIONS = {
     ["Teleport to Base"] = "传送到基地",
     ["Teleport to Player"] = "传送到玩家",
 
+    ["Bring"] = "带来",
+    ["Abort"] = "中止",
     ["1x1 cutter"] = "1x1 切割机",
     ["Amount"] = "数量",
     ["Base Option"] = "基地选项",
