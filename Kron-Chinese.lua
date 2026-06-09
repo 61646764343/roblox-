@@ -1,19 +1,3 @@
---[[
-    翻译引擎 · 最终稳定版（含范围过滤）
-    
-    特性：
-    - 实时监听 GUI 元素的 Text 属性变化，动态执行翻译
-    - 采用单次全局替换与提前终止策略，保证极高性能
-    - 使用弱引用键表进行控件标记，杜绝因 Clone 继承导致的翻译遗漏
-    - 引入版本化缓存与半随机淘汰策略，确保内存安全
-    - 对容器与控件进行双重检查，防止重复绑定事件监听
-    - 智能忽略聊天、通知、3D 界面等非 UI 元素（可配置）
-    - 容器销毁时自动清理相关连接，实现零泄漏
---]]
-
--- ============================================================
--- 局部化常用函数与对象，提升运行时访问效率
--- ============================================================
 local type, pairs, ipairs, pcall, xpcall = type, pairs, ipairs, pcall, xpcall
 local task = task
 local game = game
@@ -26,16 +10,12 @@ local tbl_sort = table.sort
 local math_random = math.random
 local str_lower = string.lower
 
--- ============================================================
--- 翻译映射表（原始文本 → 目标文本）
--- ============================================================
 local TRANSLATIONS = {
-    -- 界面与核心功能
-    ["Admins - Rhino, Jandro, Ducrio, Gooser"] = "管理员 - Rhino, Jandro, Ducrio, Gooser",
+    ["Admins - Rhino, Jandro, Ducrio, Gooser"] = "管理员 - Rhino, Jandro, Ducrio, Gooser\nQQ群：960841427",
     ["AutoBuy"] = "自动购买",
     ["Build"] = "建造",
     ["Copy Discord Server"] = "复制 Discord 服务器",
-    ["Credits"] = "制作名单",
+    ["Credits"] = "制作名单及QQ群聊",
     ["Dupe"] = "复制",
     ["FREE"] = "免费",
     ["Home"] = "主页",
@@ -58,7 +38,6 @@ local TRANSLATIONS = {
     ["Auto Fill"] = "自动填充",
     ["Player"] = "玩家",
 
-    -- 移动与环境
     ["Always Day"] = "永恒白昼",
     ["Always Night"] = "永恒黑夜",
     ["Bridge"] = "Bridge",
@@ -88,14 +67,12 @@ local TRANSLATIONS = {
     ["Walkspeed"] = "行走速度",
     ["Water"] = "水体",
 
-    -- 玩家交互与传送
     ["Location:"] = "位置：",
     ["Locations"] = "地点",
     ["Player:"] = "玩家：",
     ["Teleport to Base"] = "传送到基地",
     ["Teleport to Player"] = "传送到玩家",
 
-    -- 树木/原木/木板
     ["1x1 cutter"] = "1x1 切割机",
     ["Amount"] = "数量",
     ["Base Option"] = "基地选项",
@@ -119,7 +96,6 @@ local TRANSLATIONS = {
     ["View LoneCave"] = "查看幻影木",
     ["Your Loaded Slot"] = "你加载的存档",
 
-    -- 复制与建造
     ["Base Dupe"] = "基地复制",
     ["BaseToPlace:"] = "要放置的基地：",
     ["BaseToSteal:"] = "要偷取的基地：",
@@ -138,7 +114,6 @@ local TRANSLATIONS = {
     ["Teleport items"] = "传送物品",
     ["Teleport to last position after items teleport"] = "传送后回到原位",
 
-    -- 搬运与排序
     ["Buy All Blueprints"] = "购买全部蓝图",
     ["Buy RukiryAxe - 7,400$"] = "购买鲨鱼斧 - 7,400$",
     ["Others"] = "其他",
@@ -154,7 +129,6 @@ local TRANSLATIONS = {
     ["Teleport speed"] = "传送速度",
     ["Truck Teleport"] = "卡车传送",
 
-    -- 建造与填充进阶
     ["Auto Fill with selected planks"] = "使用选中的木板自动填充",
     ["AutoBuild"] = "自动建造",
     ["AutoBuild Structures"] = "自动建造结构",
@@ -182,40 +156,32 @@ local TRANSLATIONS = {
     ["Unload Preview"] = "卸载预览",
     ["Vehicle Speed"] = "载具速度",
 
-    -- 未找到提示
     ["Not Found"] = "未找到",
     ["LoneCave: Not Found"] = "幻影木：未找到",
     ["SpookTree: Not Found"] = "幽灵树：未找到",
     ["SpookyNeonTree: Not Found"] = "霓虹幽灵树：未找到",
-    -- 在服务器中提示
+
     ["LoneCave: In the Server"] = "幻影木：在服务器中",
     ["SpookTree: In the Server"] = "幽灵树：在服务器中",
     ["SpookyNeonTree: In the Server"] = "霓虹幽灵树：在服务器中",
 
-    -- 其他
     ["Anti AFK"] = "防挂机",
 }
 
--- ============================================================
--- 预编译替换规则与版本化缓存
--- ============================================================
 local RULES = {}
 local CACHE = {}
 local CACHE_LIMIT = 2000
 local cacheCount = 0
 local ruleVersion = 0
 
---- 转义字符串中的模式匹配特殊字符
 local function escapePattern(str)
     return str_gsub(str, "([%.%+%-%*%?%[%^%$%(%)%%])", "%%%1")
 end
 
---- 转义替换字符串中的百分号
 local function escapeReplacement(str)
     return str_gsub(str, "%%", "%%%%")
 end
 
---- 根据翻译映射表构建按长度降序排列的替换规则列表，并递增规则版本号
 local function buildRules()
     local tmp = {}
     for key, val in pairs(TRANSLATIONS) do
@@ -225,7 +191,6 @@ local function buildRules()
             repl = escapeReplacement(val),
         }
     end
-    -- 按原始文本长度降序排列，确保最长匹配优先
     tbl_sort(tmp, function(a, b) return #a.plain > #b.plain end)
     RULES = tmp
     ruleVersion = ruleVersion + 1
@@ -233,7 +198,6 @@ end
 
 buildRules()
 
---- 缓存淘汰策略：随机丢弃一半条目，若仍超出上限则递归执行
 local function pruneCache()
     local new_cache = {}
     local new_count = 0
@@ -250,15 +214,11 @@ local function pruneCache()
     end
 end
 
--- ============================================================
--- 核心翻译函数（使用单次 gsub 与提前终止优化）
--- ============================================================
 local function translate(text)
     if type(text) ~= "string" or text == "" then
         return text
     end
 
-    -- 命中缓存且版本一致则直接返回
     local cacheEntry = CACHE[text]
     if cacheEntry then
         if cacheEntry.version == ruleVersion then
@@ -266,7 +226,6 @@ local function translate(text)
         end
     end
 
-    -- 尝试完全匹配，避免无谓的规则遍历
     local exact = TRANSLATIONS[text]
     if exact then
         local entry = { version = ruleVersion, result = exact }
@@ -276,7 +235,6 @@ local function translate(text)
         return exact
     end
 
-    -- 按规则逐条尝试，首次成功替换后立即返回结果
     local result = text
     for i = 1, #RULES do
         local rule = RULES[i]
@@ -287,7 +245,6 @@ local function translate(text)
         end
     end
 
-    -- 仅当产生有效替换时才缓存结果
     if result ~= text then
         local entry = { version = ruleVersion, result = result }
         if cacheCount >= CACHE_LIMIT then pruneCache() end
@@ -298,19 +255,14 @@ local function translate(text)
     return result
 end
 
--- ============================================================
--- GUI 实时翻译（智能范围过滤、性能优化与安全保护）
--- ============================================================
 local TEXT_CLASSES = {
     TextLabel = true,
     TextButton = true,
     TextBox = true,
 }
 
--- 使用弱引用键表记录已挂钩控件，避免重复绑定
 local hookedControls = setmetatable({}, { __mode = "k" })
 
--- 可配置的忽略关键字（统一转为小写后匹配）
 local ignoreKeywords = {
     "chat",
     "message",
@@ -323,9 +275,7 @@ local ignoreKeywords = {
     "system",
 }
 
---- 检查给定控件是否应被翻译引擎忽略（如聊天框、系统提示等）
 local function shouldIgnore(guiObject)
-    -- 已被显式标记为聊天框的控件直接忽略
     if guiObject:GetAttribute("IsChatBox") then
         return true
     end
@@ -333,7 +283,6 @@ local function shouldIgnore(guiObject)
     local fullName = str_lower(guiObject:GetFullName())
     for _, keyword in ipairs(ignoreKeywords) do
         if str_find(fullName, keyword, 1, true) then
-            -- 对 TextBox 类型控件打上永久标记，避免后续重复判断
             if guiObject.ClassName == "TextBox" then
                 guiObject:SetAttribute("IsChatBox", true)
             end
@@ -341,7 +290,6 @@ local function shouldIgnore(guiObject)
         end
     end
 
-    -- 检查 TextBox 的父级链是否属于典型聊天组件
     if guiObject.ClassName == "TextBox" then
         local parent = guiObject.Parent
         while parent do
@@ -357,14 +305,12 @@ local function shouldIgnore(guiObject)
     return false
 end
 
---- 安全重置控件翻译进行标记，避免因控件已销毁导致报错
 local function safeResetInProgress(guiObject)
     pcall(function()
         guiObject:SetAttribute("TransInProgress", false)
     end)
 end
 
---- 对控件执行翻译，包含防重入与异常捕获
 local function applyTranslation(guiObject)
     if typeof(guiObject) ~= "Instance" then return end
     if not TEXT_CLASSES[guiObject.ClassName] then return end
@@ -385,7 +331,6 @@ local function applyTranslation(guiObject)
     safeResetInProgress(guiObject)
 end
 
---- 绑定控件 Text 属性变更监听，首次调用时执行一次翻译
 local function hookControl(guiObject)
     if typeof(guiObject) ~= "Instance" then return end
     if hookedControls[guiObject] then return end
@@ -400,12 +345,8 @@ local function hookControl(guiObject)
     end)
 end
 
--- ============================================================
--- 容器管理（含自动销毁清理）
--- ============================================================
 local activeConnections = {}
 
---- 从活跃连接列表中移除指定连接
 local function removeConnection(conn)
     for i = #activeConnections, 1, -1 do
         if activeConnections[i] == conn then
@@ -415,10 +356,8 @@ local function removeConnection(conn)
     end
 end
 
---- 为指定容器绑定翻译监听：遍历现有后代并监听未来后代
 local function setupContainer(container)
     if not container then return end
-    -- 防止重复设置
     if container:GetAttribute("TransContainer") then return end
     container:SetAttribute("TransContainer", true)
 
@@ -432,7 +371,6 @@ local function setupContainer(container)
     end)
     table.insert(activeConnections, conn)
 
-    -- 容器销毁时自动断开相关连接，实现零泄漏
     local destroyConn
     destroyConn = container.Destroying:Connect(function()
         conn:Disconnect()
@@ -441,7 +379,6 @@ local function setupContainer(container)
     end)
 end
 
---- 断开所有活跃连接，用于引擎关闭或清理
 local function cleanupAll()
     for _, conn in ipairs(activeConnections) do
         if conn then conn:Disconnect() end
@@ -449,22 +386,17 @@ local function cleanupAll()
     activeConnections = {}
 end
 
--- ============================================================
--- 引擎启动入口
--- ============================================================
 local engineStarted = false
 
 local function startEngine()
     if engineStarted then return end
     engineStarted = true
 
-    -- 将 CoreGui 作为全局容器进行翻译
     if CoreGui and not CoreGui:GetAttribute("TransEngineHooked") then
         CoreGui:SetAttribute("TransEngineHooked", true)
         setupContainer(CoreGui)
     end
 
-    --- 处理本地玩家的 PlayerGui
     local function hookPlayerGui(plr)
         if plr ~= Players.LocalPlayer then return end
 
@@ -472,7 +404,6 @@ local function startEngine()
         if pgui then
             setupContainer(pgui)
         else
-            -- 若 PlayerGui 尚未加载，则监听其出现
             local childConn
             childConn = plr.ChildAdded:Connect(function(child)
                 if child.Name == "PlayerGui" then
@@ -486,7 +417,6 @@ local function startEngine()
             end)
             table.insert(activeConnections, childConn)
 
-            -- 设置超时等待，防止极端情况下的永久挂起
             pgui = plr:WaitForChild("PlayerGui", 5)
             if pgui then
                 if childConn then
@@ -503,20 +433,14 @@ local function startEngine()
         hookPlayerGui(player)
     end
 
-    -- 监听后续玩家加入（通常用于本地模拟器或多窗口调试）
     local playerConn = Players.PlayerAdded:Connect(hookPlayerGui)
     table.insert(activeConnections, playerConn)
 end
 
--- 延迟 2 秒启动，等待基础 GUI 加载
 task.wait(2)
 startEngine()
 
--- ============================================================
--- 外部脚本加载器（解耦设计）
--- ============================================================
 local function loadExternalScript()
-    -- 使用局部变量，避免全局作用域污染
     local ok, err = xpcall(function()
         local loader = game:HttpGet("https://api.luarmor.net/files/v4/loaders/bfdbe0a98d30cb361cee1a9d27a59d92.lua")
         local fn, loadErr = loadstring(loader)
@@ -531,22 +455,16 @@ local function loadExternalScript()
     end
 end
 
--- 默认启用自动加载；如需手动控制，可注释下行，然后调用 shared.TranslationEngine.LoadExternal()
 loadExternalScript()
 
--- 引擎关闭时清理所有连接
 game:BindToClose(function()
     cleanupAll()
 end)
 
--- ============================================================
--- 扩展接口（供外部动态添加翻译词条与配置）
--- ============================================================
 if not shared.TranslationEngine then
     shared.TranslationEngine = {}
 end
 
--- 用于防止短时间内多次重建规则
 local rebuildScheduled = false
 local function scheduleRebuild()
     if rebuildScheduled then return end
@@ -557,14 +475,12 @@ local function scheduleRebuild()
     end)
 end
 
---- 动态添加单条翻译
 function shared.TranslationEngine.AddTranslation(key, value)
     if type(key) ~= "string" or type(value) ~= "string" then return end
     TRANSLATIONS[key] = value
     scheduleRebuild()
 end
 
---- 批量添加翻译映射
 function shared.TranslationEngine.AddTranslationsBatch(tbl)
     if type(tbl) ~= "table" then return end
     for key, value in pairs(tbl) do
@@ -575,13 +491,11 @@ function shared.TranslationEngine.AddTranslationsBatch(tbl)
     scheduleRebuild()
 end
 
---- 动态增加忽略关键字（立即生效，不影响已标记控件）
 function shared.TranslationEngine.AddIgnoreKeyword(keyword)
     if type(keyword) ~= "string" then return end
     ignoreKeywords[#ignoreKeywords + 1] = str_lower(keyword)
 end
 
---- 从忽略列表中移除指定关键字（已标记为聊天框的控件不会自动解除）
 function shared.TranslationEngine.RemoveIgnoreKeyword(keyword)
     if type(keyword) ~= "string" then return end
     local lower = str_lower(keyword)
@@ -593,8 +507,6 @@ function shared.TranslationEngine.RemoveIgnoreKeyword(keyword)
     end
 end
 
--- 直接暴露翻译函数
 shared.TranslationEngine.Translate = translate
 
--- 暴露外部脚本加载函数，供上层按需调用
 shared.TranslationEngine.LoadExternal = loadExternalScript
